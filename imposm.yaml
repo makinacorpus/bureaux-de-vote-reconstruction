@@ -1,0 +1,56 @@
+tables:
+  ways:
+    type: linestring
+    mapping:
+      highway:
+        - construction
+        - motorway
+        - motorway_link
+        - trunk
+        - trunk_link
+        - primary
+        - primary_link
+        - secondary
+        - secondary_link
+        - tertiary
+        - tertiary_link
+        - unclassified
+        - residential
+        - track
+      railway:
+        - construction
+        - disused
+        - funicular
+        - light_rail
+        - monorail
+        - narrow_gauge
+        - preserved
+        - rail
+        - tram
+      waterway:
+        - river
+        - stream
+        - canal
+        - riverbank
+      tunnel: [__any__]
+      service: [__any__]
+    filters:
+      reject:
+        service: [__any__] # highway and railway
+    columns:
+      - name: geometry
+        type: geometry
+      - name: tunnel
+        key: tunnel
+        type: string
+
+  polygons:
+    type: polygon
+    mapping:
+      waterway:
+        - riverbank
+      natural:
+        - water
+    columns:
+      - name: geometry
+        type: geometry
