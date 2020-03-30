@@ -1,4 +1,4 @@
-# Une approche de la reconstruction automatique de la géométrie des bureaux de vote
+# Une approche la reconstruction automatique de la géométrie des bureaux de vote
 
 Script de reconstruction des géométries de bureau de vote depuis les adresses des électeurs.
 
@@ -26,6 +26,7 @@ php2pgsql communes-20160119.shp | psql
 
 ## Import des données de voirie d’OpenStreetMap
 
+À l'aide de [imposm3](https://imposm.org/).
 ```
 # 28 Mo
 wget http://download.openstreetmap.fr/extracts/europe/france/ile_de_france/val_de_marne-latest.osm.pbf
@@ -35,13 +36,12 @@ imposm import -mapping imposm.yaml -read val_de_marne-latest.osm.pbf -overwritec
 ## Exécution des scripts de traitement
 
 ```
-psql < 10_communes.sql
-20_blocks.sql
-psql -v ON_ERROR_STOP=1 
-30_addresses.sql
-40_voronoi.sql
-50_bureau.sql
-60_block2.sql
-70_fill.sql
-80_clean.sql
+psql -v ON_ERROR_STOP=1 10_communes.sql
+psql -v ON_ERROR_STOP=1 20_blocks.sql
+psql -v ON_ERROR_STOP=1 30_addresses.sql
+psql -v ON_ERROR_STOP=1 40_voronoi.sql
+psql -v ON_ERROR_STOP=1 50_bureau.sql
+psql -v ON_ERROR_STOP=1 60_block2.sql
+psql -v ON_ERROR_STOP=1 70_fill.sql
+psql -v ON_ERROR_STOP=1 80_clean.sql
 ```
