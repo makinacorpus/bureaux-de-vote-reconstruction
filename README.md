@@ -1,4 +1,4 @@
-# Une approche la reconstruction automatique de la géométrie des bureaux de vote
+# Une approche de reconstruction automatique de la géométrie des bureaux de vote
 
 Script de reconstruction des géométries de bureau de vote depuis les adresses des électeurs.
 
