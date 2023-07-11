@@ -1,0 +1,115 @@
+<html>
+
+<head>
+  <title>Reconstruction automatique de la géométrie des bureaux de vote</title>
+  <meta charset="utf-8" />
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@3.1.0/dist/maplibre-gl.css" crossorigin="anonymous">
+  <script src="https://unpkg.com/maplibre-gl@3.1.0/dist/maplibre-gl.js" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/pmtiles@2.9.0/dist/index.js"></script>
+  <style>
+    body {
+      margin: 0;
+    }
+
+    #map {
+      height: 100%;
+      width: 100%;
+    }
+
+  </style>
+</head>
+
+<body>
+  <div id="map"></div>
+  <script type="text/javascript">
+    // add the PMTiles plugin to the maplibregl global.
+    let protocol = new pmtiles.Protocol();
+    maplibregl.addProtocol("pmtiles", protocol.tile);
+
+    // It is not a zip file. Just an hosting hack.
+    let PMTILES_URL = "https://static.data.gouv.fr/resources/reconstruction-automatique-de-la-geometrie-des-bureaux-de-vote-depuis-insee-reu-et-openstreetmap/20230711-102308/bureau.pmtiles.zip";
+
+    const p = new pmtiles.PMTiles(PMTILES_URL)
+
+    // this is so we share one instance across the JS code and the map renderer
+    protocol.add(p);
+
+    // we first fetch the header so we can get the center lon, lat of the map.
+    p.getHeader().then(h => {
+      console.error(h)
+      const map = new maplibregl.Map({
+        container: 'map',
+        zoom: 9,
+        center: [-1.6, 49, 4],
+        hash: true,
+        style: "https://vecto.teritorio.xyz/styles/teritorio-basic/style.json?key=teritorio-demo-1-eTuhasohVahquais0giuth7i"
+      });
+      map.addControl(new maplibregl.NavigationControl());
+
+      map.on('load', () => {
+        map.addSource('bureau', {
+          type: "vector",
+          url: "pmtiles://" + PMTILES_URL,
+          attribution: "INSEE REU 2022"
+        })
+        map.addLayer({
+          "id": "bureau",
+          "source": "bureau",
+          "source-layer": "bureaufgb",
+          "type": "fill",
+          "paint": {
+            "fill-color": ["get", "color"],
+            'fill-opacity': [
+              'case',
+              ['boolean', ['feature-state', 'hover'], false],
+              0.8,
+              0.6
+            ]
+          }
+        })
+        map.addLayer({
+          "id": "bureau-border",
+          "source": "bureau",
+          "source-layer": "bureaufgb",
+          "type": "line",
+          "paint": {
+            "line-color": "#000000",
+            "line-width": 0.5
+          }
+        })
+
+        let hoveredStateId = null;
+        map.on('mousemove', 'bureau', (e) => {
+          if (e.features.length > 0) {
+            if (hoveredStateId) {
+              map.setFeatureState(
+                { source: 'bureau', sourceLayer: 'bureaufgb', id: hoveredStateId },
+                { hover: false }
+              );
+            }
+            hoveredStateId = e.features[0].id;
+            map.setFeatureState(
+              { source: 'bureau', sourceLayer: 'bureaufgb', id: hoveredStateId },
+              { hover: true }
+            );
+          }
+        });
+
+        // When the mouse leaves the state-fill layer, update the feature state of the
+        // previously hovered feature.
+        map.on('mouseleave', 'bureau', () => {
+          if (hoveredStateId) {
+            map.setFeatureState(
+              { source: 'bureau', sourceLayer: 'bureaufgb', id: hoveredStateId },
+              { hover: false }
+            );
+          }
+          hoveredStateId = null;
+        });
+
+      })
+    })
+  </script>
+</body>
+
+</html>

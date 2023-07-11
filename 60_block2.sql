@@ -11,7 +11,7 @@ SELECT
 FROM
     blocks
     LEFT JOIN bureau ON
-        blocks.id = ANY (bureau.block_ids)
+        ARRAY[blocks.id] <@ (bureau.block_ids)
 WHERE
     bureau.block_ids IS NULL
 ;

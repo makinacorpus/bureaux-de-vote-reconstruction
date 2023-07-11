@@ -37,76 +37,63 @@ GROUP BY
 HAVING
     count(DISTINCT voronoi.bureau) > 1
 ;
+CREATE INDEX _bureau_non_full_block_idx ON _bureau_non_full_block(id);
+ALTER TABLE _bureau_non_full_block ADD PRIMARY KEY (id);
 
 
 -- Union of cell by bureau and by block
 
--- DROP SEQUENCE _bureau_non_full_block_id;
--- CREATE SEQUENCE _bureau_non_full_block_id;
-
 DROP TABLE IF EXISTS _bureau_non_full_block_union CASCADE;
 CREATE TABLE _bureau_non_full_block_union AS
-SELECT
-    insee,
-    bureau,
-    _bureau_non_full_block.id AS block_id,
-    -- nextval('_bureau_non_full_block_id') AS id,
---    ST_Buffer(ST_Collect(voronoi.geom), 0.1, 'join=mitre mitre_limit=2') AS geom
-ST_Intersection(
-        ST_Buffer(ST_Collect(voronoi.geom), 0),
-    _bureau_non_full_block.geom
+WITH u AS (
+    SELECT DISTINCT ON (insee, bureau, block_id, voronoi.geom)
+        insee,
+        bureau,
+        block_id,
+        voronoi.geom AS voronoi_geom,
+        b.geom AS b_geom
+    FROM
+        voronoi
+        JOIN _bureau_non_full_block AS b ON
+            b.id = voronoi.block_id
+    ORDER BY
+        insee,
+        bureau,
+        block_id,
+        voronoi.geom
 )
-    AS geom
-FROM
-    voronoi
-    JOIN _bureau_non_full_block ON
-        _bureau_non_full_block.id = voronoi.block_id
-GROUP BY
-    insee,
-    bureau,
-    _bureau_non_full_block.id,
-    _bureau_non_full_block.geom
-;
-
-
-DROP TABLE IF EXISTS _bureau_non_full_block_union CASCADE;
-CREATE TABLE _bureau_non_full_block_union AS
 SELECT
     insee,
     bureau,
     block_id,
     ST_Intersection(
-        ST_Buffer(ST_Collect(voronoi.geom), 0),
-        (SELECT geom FROM _bureau_non_full_block AS b WHERE b.id = voronoi.block_id)
+        ST_Buffer(voronoi_geom, 0),
+        b_geom
     )
     AS geom
 FROM
-    voronoi
-GROUP BY
-    insee,
-    bureau,
-    block_id
+    u
 ;
 
 
 DROP TABLE IF EXISTS _bureau_limit CASCADE;
 CREATE TABLE _bureau_limit AS
 SELECT
-    insee,
+    addresses.insee,
     bureau,
     ST_Buffer(
-        ST_ConcaveHull(
-            ST_Collect(geom),
-            0.99,
-            false
+        ST_Envelope(
+            ST_Collect(geom)
         ),
         400,
         'join=mitre mitre_limit=2'
     ) AS geom
 FROM
-     addresses
+    addresses
+    JOIN communes_multi_bureau ON
+        communes_multi_bureau.insee = addresses.insee
 GROUP BY
-    insee,
+    addresses.insee,
     bureau
 ;
 
@@ -134,6 +121,7 @@ GROUP BY
     bureau
 ;
 CREATE INDEX _bureau_union_idx ON _bureau_union USING gist(geom);
+CREATE INDEX _bureau_union_idx_block_ids ON _bureau_union USING gin(block_ids);
 
 
 DROP VIEW IF EXISTS bureau CASCADE;

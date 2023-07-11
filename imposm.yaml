@@ -16,6 +16,8 @@ tables:
         - tertiary_link
         - unclassified
         - residential
+        - pedestrian
+        - living_street
         - track
       railway:
         - construction

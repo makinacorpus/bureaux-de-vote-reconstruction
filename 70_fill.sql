@@ -14,6 +14,7 @@ RETURNS void AS $$
 BEGIN
     -- Get the bureau geom the most simple by the addition of the free block.
     -- The shape should be more regural after the addition af the free block.
+    RAISE NOTICE '_fill_blocks_bureau';
     DROP TABLE IF EXISTS _fill_blocks_bureau CASCADE;
     CREATE TABLE _fill_blocks_bureau AS
     SELECT DISTINCT ON (_fill_free_blocks.id)
@@ -29,23 +30,24 @@ BEGIN
         -- blocks2 AS _fill_free_blocks
         JOIN _fill_bureau AS bureau ON
             bureau.insee = _fill_free_blocks.insee AND
-            ST_Intersects(bureau.geom, _fill_free_blocks.geom) AND
+            --ST_Intersects(bureau.geom, _fill_free_blocks.geom) AND
+            bureau.geom && _fill_free_blocks.geom AND
             ST_Contains(bureau.geom_limit, _fill_free_blocks.geom) AND
             ( -- Avoid only touch by one point
                 ST_Area(ST_Intersection(
                     _fill_free_blocks.geom,
-                    ST_Buffer(bureau.geom, .1, 'join=mitre mitre_limit=2')
+                    ST_MakeValid(ST_Buffer(bureau.geom, .1, 'join=mitre mitre_limit=2'))
                 )) > .1
                 OR -- Or geometry is smaller than the test buffer
                 ST_Area(ST_Intersection(
                     _fill_free_blocks.geom,
-                    ST_Buffer(bureau.geom, .1, 'join=mitre mitre_limit=2')
+                    ST_MakeValid(ST_Buffer(bureau.geom, .1, 'join=mitre mitre_limit=2'))
                 )) > 0.9 * ST_Area(_fill_free_blocks.geom)
             )
     WHERE
         ST_NumGeometries(ST_Buffer(ST_Collect(_fill_free_blocks.geom, bureau.geom), 1, 'join=mitre mitre_limit=2'))
         <
-        ST_NumGeometries(ST_Buffer(bureau.geom, 1, 'join=mitre mitre_limit=2'))
+        ST_NumGeometries(ST_MakeValid(ST_Buffer(bureau.geom, 1, 'join=mitre mitre_limit=2')))
         OR
         -- Diff of point number of geometry after block simplified union with bureau
         -- Less point is more simple shape
@@ -54,7 +56,7 @@ BEGIN
             -- Buffer help to remove silder gap polygon, counting as points
             PolygonNPoints(ST_Simplify(ST_Buffer(ST_Collect(_fill_free_blocks.geom, bureau.geom), 1, 'join=mitre mitre_limit=2'), 1))
         -
-            PolygonNPoints(ST_Simplify(ST_Buffer(bureau.geom, 1, 'join=mitre mitre_limit=2'), 1))
+            PolygonNPoints(ST_Simplify(ST_MakeValid(ST_Buffer(bureau.geom, 1, 'join=mitre mitre_limit=2')), 1))
         <= 2 + contraint
         )
     ORDER BY
@@ -62,13 +64,13 @@ BEGIN
         (
             ST_NumGeometries(ST_Buffer(ST_Collect(_fill_free_blocks.geom, bureau.geom), 1, 'join=mitre mitre_limit=2'))
         -
-            ST_NumGeometries(ST_Buffer(bureau.geom, 1, 'join=mitre mitre_limit=2'))
+            ST_NumGeometries(ST_MakeValid(ST_Buffer(bureau.geom, 1, 'join=mitre mitre_limit=2')))
         ),
 
         (
             PolygonNPoints(ST_Simplify(ST_Buffer(ST_Collect(_fill_free_blocks.geom, bureau.geom), 1, 'join=mitre mitre_limit=2'), 1))
         -
-            PolygonNPoints(ST_Simplify(ST_Buffer(bureau.geom, 1, 'join=mitre mitre_limit=2'), 1))
+            PolygonNPoints(ST_Simplify(ST_MakeValid(ST_Buffer(bureau.geom, 1, 'join=mitre mitre_limit=2')), 1))
         )
         -- ST_Length(ST_Intersection(_fill_free_blocks.geom, bureau.geom))
         -- ST_Area(ST_Intersection(
@@ -90,14 +92,16 @@ BEGIN
 
     -- Merge bureau with the better free blocks.
     -- Plus get back the bureau without free blocks.
-    DROP TABLE IF EXISTS _fill_bureau_plus CASCADE;
-    CREATE TABLE _fill_bureau_plus AS
+    RAISE NOTICE '_fill_bureau_plus0';
+    DROP TABLE IF EXISTS _fill_bureau_plus0 CASCADE;
+    CREATE TABLE _fill_bureau_plus0 AS
     SELECT
         insee,
         bureau,
         block_ids || array_agg(block_id) AS block_ids,
         -- ST_CollectionExtract(ST_Union(bureau_geom, ST_Union(block_geom)), 3) AS geom,
-        ST_CollectionExtract(ST_Buffer(ST_Collect(bureau_geom, ST_Collect(block_geom)), 0), 3) AS geom,
+        ST_Collect(block_geom) AS geom,
+        bureau_geom,
         geom_limit
     FROM
         _fill_blocks_bureau
@@ -107,6 +111,20 @@ BEGIN
         block_ids,
         bureau_geom,
         geom_limit
+    ;
+
+    RAISE NOTICE '_fill_bureau_plus';
+    DROP TABLE IF EXISTS _fill_bureau_plus CASCADE;
+    CREATE TABLE _fill_bureau_plus AS
+    SELECT
+        insee,
+        bureau,
+        block_ids,
+        -- ST_CollectionExtract(ST_Union(bureau_geom, ST_Union(block_geom)), 3) AS geom,
+        ST_CollectionExtract(ST_Buffer(ST_Collect(bureau_geom, geom), 0), 3) AS geom,
+        geom_limit
+    FROM
+        _fill_bureau_plus0
 
     UNION ALL
 
@@ -125,11 +143,15 @@ BEGIN
         _fill_blocks_bureau.insee IS NULL
     ;
 
-    TRUNCATE _fill_bureau;
-    INSERT INTO _fill_bureau SELECT * FROM _fill_bureau_plus;
+    DROP TABLE IF EXISTS _fill_bureau CASCADE;
+    CREATE TABLE _fill_bureau AS
+    SELECT * FROM _fill_bureau_plus;
+    CREATE INDEX _fill_bureau_idx ON _fill_bureau USING gist(geom);
+    CREATE INDEX _fill_bureau_idx_block_ids ON _fill_bureau USING gin(block_ids);
 
 
     -- Get blocks not part of any bureau
+    RAISE NOTICE '_fill_free_blocks';
     DROP TABLE IF EXISTS _fill_free_blocks CASCADE;
     CREATE TABLE _fill_free_blocks AS
     SELECT
@@ -139,7 +161,7 @@ BEGIN
     FROM
         blocks2 AS blocks
         LEFT JOIN _fill_bureau ON
-            blocks.id = ANY (_fill_bureau.block_ids)
+            ARRAY[blocks.id] <@ _fill_bureau.block_ids
     WHERE
         _fill_bureau.block_ids IS NULL
     ;
@@ -156,7 +178,6 @@ DECLARE
    _count_old INTEGER;
    iter INTEGER := 1;
 BEGIN
-    --PERFORM _fill_get_free_blocks(); -- Done outside
     _count_old := (SELECT count(*) from _fill_free_blocks);
     RAISE NOTICE 'Initial free block count %.', _count_old;
 
@@ -187,14 +208,16 @@ FROM
     bureau
 ;
 CREATE INDEX _fill_bureau_idx ON _fill_bureau USING gist(geom);
+CREATE INDEX _fill_bureau_idx_block_ids ON _fill_bureau USING gin(block_ids);
 
 
 DROP TABLE IF EXISTS _fill_free_blocks CASCADE;
 CREATE TABLE _fill_free_blocks AS
 SELECT insee, id, geom FROM blocks2;
+CREATE INDEX _fill_free_blocks_idx ON _fill_free_blocks USING gist(geom);
 
 
-SELECT _fill_aggregate_free_blocks(10, 5);
+SELECT _fill_aggregate_free_blocks(5, 5);
 
 
 

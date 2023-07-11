@@ -5,7 +5,7 @@ SELECT
     nom,
     ST_Transform(ST_SetSRID(geom, 4326), 2154) AS geom
 FROM
-    "communes-20160119"
+    "communes-20220101"
 WHERE
     ST_GeometryType(geom) IN ('ST_Polygon', 'ST_MultiPolygon')
 ;

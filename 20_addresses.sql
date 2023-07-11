@@ -2,16 +2,18 @@
 DROP TABLE IF EXISTS _addresses_dep2154 CASCADE;
 CREATE TABLE _addresses_dep2154 AS
 SELECT
-    result_citycode AS insee,
-    bureau,
+    CASE
+        WHEN code_commune_ref IN ('13201', '13202', '13203', '13204', '13205', '13206', '13207', '13208', '13209', '13210', '13211', '13212', '13213', '13214', '13215', '13216') THEN '13055'
+        WHEN code_commune_ref LIKE '75%' THEN '75056'
+        WHEN code_commune_ref IN ('69381', '69382', '69383', '69384', '69385', '69386', '69387', '69388', '69389') THEN '69123'
+        ELSE code_commune_ref
+    END AS insee,
+    id_brut_bv_reu AS bureau,
     ST_Transform(ST_SetSRID(ST_MakePoint(longitude::float, latitude::float), 4326), 2154) AS geom
 FROM
     dep
 WHERE
-    ville IS NOT NULL AND
-    bureau IS NOT NULL AND
-    result_type IN ('housenumber', 'locality') AND
-    result_score::float > 0.7
+    geo_score::float > 0.7
 ;
 
 
@@ -96,3 +98,26 @@ WHERE
     ST_Distance(_addresses_uniq.geom, median_distance.geom) < 5 * median_distance.median_distance
 ;
 CREATE INDEX addresses_idx ON addresses USING gist(geom);
+
+
+DROP TABLE IF EXISTS communes_multi_bureau CASCADE;
+CREATE TABLE communes_multi_bureau AS
+WITH
+b AS (
+    SELECT
+        insee
+    FROM
+        addresses
+    GROUP BY
+        insee,
+        bureau
+)
+SELECT
+    insee
+FROM
+    b
+GROUP BY
+    insee
+HAVING
+    count(*) > 1
+;
